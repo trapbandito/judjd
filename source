@@ -1,0 +1,638 @@
+--[[
+    Advanced Targeting System for Roblox (Educational Purposes Only)
+    Features: Head tracking, Silent aim, Desync with void protection
+]]
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+-- Variables
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local gui, tabSystem
+
+-- Settings
+local settings = {
+    -- Head Tracking
+    headTrack = {enabled = false, target = nil, smoothness = 0.3, maxDistance = 100},
+    -- Silent Aim
+    silentAim = {enabled = false, fov = 0.3, prediction = 0.5, headChance = 0.7},
+    -- Desync
+    desync = {enabled = false, strength = 0.5, frequency = 0.3, voidProtection = true}
+}
+
+-- Visual elements
+local visualParts = {}
+local targetableParts = {"Head", "HumanoidRootPart", "Torso", "UpperTorso", "LowerTorso"}
+
+-- Create GUI
+local function createGUI()
+    gui = Instance.new("ScreenGui")
+    gui.Name = "TargetingGUI"
+    gui.ResetOnSpawn = false
+   
+    -- Create tabs container
+    tabSystem = Instance.new("Frame")
+    tabSystem.Name = "TabSystem"
+    tabSystem.Size = UDim2.new(0, 300, 0, 400)
+    tabSystem.Position = UDim2.new(0.85, -150, 0.5, -200)
+    tabSystem.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    tabSystem.BackgroundTransparency = 0.3
+    tabSystem.BorderSizePixel = 0
+    tabSystem.Parent = gui
+   
+    -- Add rounded corners
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = tabSystem
+   
+    -- Create tab buttons
+    local tabButtons = Instance.new("Frame")
+    tabButtons.Name = "TabButtons"
+    tabButtons.Size = UDim2.new(1, 0, 0, 30)
+    tabButtons.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    tabButtons.BackgroundTransparency = 0.5
+    tabButtons.Parent = tabSystem
+   
+    -- Add corners to buttons
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(0, 8)
+    buttonCorner.Parent = tabButtons
+   
+    -- Create tabs
+    local tabs = {
+        {name = "Head Track", color = Color3.fromRGB(0, 170, 255)},
+        {name = "Silent Aim", color = Color3.fromRGB(255, 165, 0)},
+        {name = "Desync", color = Color3.fromRGB(255, 50, 50)}
+    }
+   
+    -- Content frames
+    local contentFrames = {}
+   
+    -- Create each tab button and content
+    for i, tab in ipairs(tabs) do
+        -- Button
+        local button = Instance.new("TextButton")
+        button.Name = tab.name.."Button"
+        button.Size = UDim2.new(1/#tabs, 0, 1, 0)
+        button.Position = UDim2.new((i-1)/#tabs, 0, 0, 0)
+        button.BackgroundColor3 = tab.color
+        button.BackgroundTransparency = i == 1 and 0.4 or 0.8
+        button.Text = tab.name
+        button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        button.Font = Enum.Font.GothamSemibold
+        button.TextSize = 14
+        button.Parent = tabButtons
+       
+        -- Content frame
+        local content = Instance.new("Frame")
+        content.Name = tab.name.."Content"
+        content.Size = UDim2.new(1, 0, 1, -30)
+        content.Position = UDim2.new(0, 0, 0, 30)
+        content.BackgroundTransparency = 1
+        content.Visible = i == 1
+        content.Parent = tabSystem
+        contentFrames[i] = content
+       
+        -- Button click
+        button.MouseButton1Click:Connect(function()
+            for j, frame in ipairs(contentFrames) do
+                frame.Visible = (j == i)
+                tabButtons:FindFirstChild(tabs[j].name.."Button").BackgroundTransparency = (j == i) and 0.4 or 0.8
+            end
+        end)
+    end
+   
+    -- Close button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Name = "CloseButton"
+    closeBtn.Size = UDim2.new(0, 20, 0, 20)
+    closeBtn.Position = UDim2.new(1, -25, 0, 5)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 14
+    closeBtn.Parent = tabSystem
+   
+    -- Round close button
+    local closeBtnCorner = Instance.new("UICorner")
+    closeBtnCorner.CornerRadius = UDim.new(0, 10)
+    closeBtnCorner.Parent = closeBtn
+   
+    closeBtn.MouseButton1Click:Connect(function()
+        tabSystem.Visible = not tabSystem.Visible
+    end)
+   
+    -- Add key hint
+    local keyHint = Instance.new("TextLabel")
+    keyHint.Size = UDim2.new(0, 200, 0, 20)
+    keyHint.Position = UDim2.new(0.5, -100, 0, 5)
+    keyHint.BackgroundTransparency = 1
+    keyHint.Text = "Press 'RightShift' to toggle GUI"
+    keyHint.TextColor3 = Color3.fromRGB(255, 255, 255)
+    keyHint.TextSize = 14
+    keyHint.Font = Enum.Font.Gotham
+    keyHint.Parent = gui
+   
+    -- Add toggle buttons and sliders to each tab
+    -- Head Track Tab
+    local headContent = contentFrames[1]
+   
+    -- Toggle
+    local headToggle = createToggle(headContent, UDim2.new(0, 10, 0, 10), "Head Tracking", function(enabled)
+        settings.headTrack.enabled = enabled
+        if not enabled then settings.headTrack.target = nil end
+    end)
+   
+    -- Smoothness slider
+    createSlider(headContent, UDim2.new(0, 10, 0, 50), "Smoothness", settings.headTrack.smoothness, function(value)
+        settings.headTrack.smoothness = value
+    end)
+   
+    -- Instructions
+    createLabel(headContent, UDim2.new(0, 10, 0, 100), "Click on a character to track their head.")
+   
+    -- Silent Aim Tab
+    local silentContent = contentFrames[2]
+   
+    -- Toggle
+    createToggle(silentContent, UDim2.new(0, 10, 0, 10), "Silent Aim", function(enabled)
+        settings.silentAim.enabled = enabled
+        -- Show/hide FOV circle
+        if gui:FindFirstChild("FOVCircle") then
+            gui.FOVCircle.Visible = enabled
+        end
+    end)
+   
+    -- FOV slider
+    createSlider(silentContent, UDim2.new(0, 10, 0, 50), "FOV", settings.silentAim.fov, function(value)
+        settings.silentAim.fov = value
+        updateFOVCircle()
+    end)
+   
+    -- Prediction slider
+    createSlider(silentContent, UDim2.new(0, 10, 0, 90), "Prediction", settings.silentAim.prediction, function(value)
+        settings.silentAim.prediction = value
+    end)
+   
+    -- Head chance slider
+    createSlider(silentContent, UDim2.new(0, 10, 0, 130), "Head Chance", settings.silentAim.headChance, function(value)
+        settings.silentAim.headChance = value
+    end)
+   
+    -- FOV circle
+    local fovCircle = Instance.new("Frame")
+    fovCircle.Name = "FOVCircle"
+    fovCircle.Size = UDim2.new(0, 500, 0, 500)
+    fovCircle.Position = UDim2.new(0.5, -250, 0.5, -250)
+    fovCircle.BackgroundTransparency = 1
+    fovCircle.Visible = false
+    fovCircle.Parent = gui
+   
+    -- Make circle using UIStroke
+    local circleStroke = Instance.new("UIStroke")
+    circleStroke.Color = Color3.fromRGB(255, 165, 0)
+    circleStroke.Transparency = 0.5
+    circleStroke.Thickness = 2
+    circleStroke.Parent = fovCircle
+   
+    -- Make it round
+    local circleCorner = Instance.new("UICorner")
+    circleCorner.CornerRadius = UDim.new(0.5, 0)
+    circleCorner.Parent = fovCircle
+   
+    -- Instructions
+    createLabel(silentContent, UDim2.new(0, 10, 0, 170), "Silent aim demonstrates target acquisition techniques (for educational purposes).")
+   
+    -- Desync Tab
+    local desyncContent = contentFrames[3]
+   
+    -- Toggle
+    createToggle(desyncContent, UDim2.new(0, 10, 0, 10), "Desync", function(enabled)
+        settings.desync.enabled = enabled
+        if enabled then createVisualization(player.Character) end
+    end)
+   
+    -- Strength slider
+    createSlider(desyncContent, UDim2.new(0, 10, 0, 50), "Strength", settings.desync.strength, function(value)
+        settings.desync.strength = value
+    end)
+   
+    -- Frequency slider
+    createSlider(desyncContent, UDim2.new(0, 10, 0, 90), "Frequency", settings.desync.frequency, function(value)
+        settings.desync.frequency = value
+    end)
+   
+    -- Void protection toggle
+    createToggle(desyncContent, UDim2.new(0, 10, 0, 130), "Void Protection", function(enabled)
+        settings.desync.voidProtection = enabled
+    end, true)
+   
+    -- Instructions
+    createLabel(desyncContent, UDim2.new(0, 10, 0, 170), "Desync demonstrates character position representation (for educational purposes).")
+   
+    -- Toggle GUI with RightShift
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == Enum.KeyCode.RightShift then
+            tabSystem.Visible = not tabSystem.Visible
+        end
+    end)
+   
+    -- Parent GUI
+    gui.Parent = player:WaitForChild("PlayerGui")
+end
+
+-- Create a toggle button
+function createToggle(parent, position, text, callback, defaultOn)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -20, 0, 30)
+    frame.Position = position
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+   
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = 14
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+   
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(0.3, 0, 0.8, 0)
+    button.Position = UDim2.new(0.7, 0, 0.1, 0)
+    button.BackgroundColor3 = defaultOn and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+    button.Text = defaultOn and "ON" or "OFF"
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.TextSize = 14
+    button.Font = Enum.Font.GothamBold
+    button.Parent = frame
+   
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = button
+   
+    local enabled = defaultOn or false
+    if defaultOn then callback(true) end
+   
+    button.MouseButton1Click:Connect(function()
+        enabled = not enabled
+        button.Text = enabled and "ON" or "OFF"
+        button.BackgroundColor3 = enabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+        callback(enabled)
+    end)
+   
+    return frame
+end
+
+-- Create a slider
+function createSlider(parent, position, text, defaultValue, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -20, 0, 30)
+    frame.Position = position
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+   
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.4, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = 14
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+   
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0.2, 0, 1, 0)
+    valueLabel.Position = UDim2.new(0.4, 0, 0, 0)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = string.format("%.2f", defaultValue)
+    valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    valueLabel.TextSize = 14
+    valueLabel.Font = Enum.Font.Gotham
+    valueLabel.Parent = frame
+   
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(0.4, 0, 0, 6)
+    sliderBg.Position = UDim2.new(0.6, 0, 0.5, -3)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    sliderBg.BorderSizePixel = 0
+    sliderBg.Parent = frame
+   
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(0, 3)
+    bgCorner.Parent = sliderBg
+   
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Size = UDim2.new(defaultValue, 0, 1, 0)
+    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+    sliderFill.BorderSizePixel = 0
+    sliderFill.Parent = sliderBg
+   
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(0, 3)
+    fillCorner.Parent = sliderFill
+   
+    local knob = Instance.new("TextButton")
+    knob.Size = UDim2.new(0, 16, 0, 16)
+    knob.Position = UDim2.new(defaultValue, -8, 0.5, -8)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.Text = ""
+    knob.Parent = sliderBg
+   
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(0, 8)
+    knobCorner.Parent = knob
+   
+    local dragging = false
+   
+    knob.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+   
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+   
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mousePos = UserInputService:GetMouseLocation()
+            local sliderPos = sliderBg.AbsolutePosition
+            local sliderSize = sliderBg.AbsoluteSize
+           
+            local relativeX = math.clamp((mousePos.X - sliderPos.X) / sliderSize.X, 0, 1)
+           
+            sliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+            knob.Position = UDim2.new(relativeX, -8, 0.5, -8)
+            valueLabel.Text = string.format("%.2f", relativeX)
+           
+            callback(relativeX)
+        end
+    end)
+   
+    return frame
+end
+
+-- Create a text label
+function createLabel(parent, position, text)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 0, 40)
+    label.Position = position
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    label.TextSize = 14
+    label.Font = Enum.Font.Gotham
+    label.TextWrapped = true
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = parent
+    return label
+end
+
+-- Find nearest humanoid via raycast
+local function findTarget()
+    local mouse = player:GetMouse()
+    local ray = camera:ScreenPointToRay(mouse.X, mouse.Y)
+   
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {player.Character}
+   
+    local result = workspace:Raycast(ray.Origin, ray.Direction * settings.headTrack.maxDistance, params)
+   
+    if result then
+        local part = result.Instance
+        local model = part:FindFirstAncestorOfClass("Model")
+       
+        if model then
+            local humanoid = model:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                local head = model:FindFirstChild("Head")
+                if head then
+                    return head
+                end
+            end
+        end
+    end
+   
+    return nil
+end
+
+-- Get silent aim target
+local function getSilentAimTarget()
+    local targets = {}
+   
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local targetPos = plr.Character.HumanoidRootPart.Position
+           
+            -- Apply prediction
+            if settings.silentAim.prediction > 0 and plr.Character:FindFirstChild("Humanoid") then
+                local humanoid = plr.Character.Humanoid
+                if humanoid.MoveDirection.Magnitude > 0 then
+                    local velocity = humanoid.MoveDirection * humanoid.WalkSpeed
+                    targetPos = targetPos + (velocity * settings.silentAim.prediction)
+                end
+            end
+           
+            local screenPos, onScreen = camera:WorldToScreenPoint(targetPos)
+           
+            if onScreen then
+                -- Check if within FOV
+                local screenCenter = Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)
+                local distance = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+                local fovRadius = camera.ViewportSize.X * settings.silentAim.fov * 0.5
+               
+                if distance <= fovRadius then
+                    -- Choose target part (head or body)
+                    local targetPart
+                   
+                    if math.random() <= settings.silentAim.headChance and plr.Character:FindFirstChild("Head") then
+                        targetPart = plr.Character.Head
+                    else
+                        local validParts = {}
+                        for _, partName in ipairs(targetableParts) do
+                            if plr.Character:FindFirstChild(partName) then
+                                table.insert(validParts, plr.Character[partName])
+                            end
+                        end
+                       
+                        if #validParts > 0 then
+                            targetPart = validParts[math.random(1, #validParts)]
+                        end
+                    end
+                   
+                    if targetPart then
+                        table.insert(targets, {
+                            part = targetPart,
+                            distance = distance,
+                            player = plr
+                        })
+                    end
+                end
+            end
+        end
+    end
+   
+    -- Sort by distance to center
+    table.sort(targets, function(a, b) return a.distance < b.distance end)
+   
+    if #targets > 0 then
+        return targets[1].part
+    end
+   
+    return nil
+end
+
+-- Update FOV circle size
+local function updateFOVCircle()
+    if gui and gui:FindFirstChild("FOVCircle") then
+        local size = camera.ViewportSize.Y * settings.silentAim.fov
+        gui.FOVCircle.Size = UDim2.new(0, size, 0, size)
+        gui.FOVCircle.Position = UDim2.new(0.5, -size/2, 0.5, -size/2)
+    end
+end
+
+-- Create visual parts for desync demonstration
+local function createVisualization(character)
+    -- Clean up existing parts
+    for _, part in pairs(visualParts) do
+        if part and part.Parent then
+            part:Destroy()
+        end
+    end
+    visualParts = {}
+   
+    if not character then return end
+   
+    -- Create visual parts for educational purposes
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") then
+            local visual = Instance.new("Part")
+            visual.Name = part.Name .. "_Visual"
+            visual.Size = part.Size
+            visual.CFrame = part.CFrame
+            visual.Anchored = true
+            visual.CanCollide = false
+            visual.Transparency = 0.7
+            visual.Material = Enum.Material.Neon
+            visual.BrickColor = BrickColor.new("Really red")
+            visual.Parent = workspace
+           
+            table.insert(visualParts, visual)
+        end
+    end
+end
+
+-- Update head tracking
+local function updateHeadTracker()
+    if not settings.headTrack.enabled or not settings.headTrack.target then return end
+   
+    -- Check if target still exists
+    if not settings.headTrack.target.Parent then
+        settings.headTrack.target = nil
+        return
+    end
+   
+    -- Calculate camera position
+    local targetPos = settings.headTrack.target.Position
+    local offset = Vector3.new(0, 2, 10)
+    local desiredPos = targetPos - camera.CFrame.LookVector * offset.Z + Vector3.new(0, offset.Y, 0)
+   
+    -- Smoothly move camera
+    camera.CFrame = camera.CFrame:Lerp(
+        CFrame.new(desiredPos, targetPos),
+        settings.headTrack.smoothness
+    )
+end
+
+-- Update desync visualization
+local function updateDesync()
+    if not settings.desync.enabled or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+   
+    -- Create visualization if needed
+    if #visualParts == 0 then
+        createVisualization(player.Character)
+    end
+   
+    -- Apply desync effect
+    local time = tick()
+    local desyncX = math.sin(time * settings.desync.frequency * 10) * settings.desync.strength * 5
+    local desyncZ = math.cos(time * settings.desync.frequency * 8) * settings.desync.strength * 5
+    local desyncOffset = CFrame.new(desyncX, 0, desyncZ)
+   
+    -- Apply void protection
+    if settings.desync.voidProtection then
+        local rootPart = player.Character.HumanoidRootPart
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+        params.FilterDescendantsInstances = {player.Character}
+       
+        local result = workspace:Raycast(rootPart.Position, Vector3.new(0, -10, 0), params)
+       
+        if not result then
+            desyncOffset = CFrame.new(desyncX, 0, desyncZ)
+        end
+    end
+   
+    -- Update visual parts
+    local i = 1
+    for _, part in pairs(player.Character:GetChildren()) do
+        if part:IsA("BasePart") and visualParts[i] then
+            visualParts[i].CFrame = part.CFrame * desyncOffset
+            i = i + 1
+        end
+    end
+end
+
+-- Initialize the system
+local function initialize()
+    createGUI()
+   
+    -- Click handling for head tracking
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+       
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and settings.headTrack.enabled then
+            local target = findTarget()
+            if target then
+                settings.headTrack.target = target
+            end
+        end
+    end)
+   
+    -- Main update loop
+    RunService:BindToRenderStep("TargetingSystem", Enum.RenderPriority.Camera.Value + 1, function(dt)
+        updateHeadTracker()
+        updateFOVCircle()
+        updateDesync()
+    end)
+   
+    print("Advanced Targeting System initialized for educational study.")
+    print("Press RightShift to toggle the interface.")
+end
+
+-- Clean up when script is destroyed
+local function cleanup()
+    for _, part in pairs(visualParts) do
+        if part and part.Parent then
+            part:Destroy()
+        end
+    end
+   
+    pcall(function() RunService:UnbindFromRenderStep("TargetingSystem") end)
+end
+
+script.Destroyed:Connect(cleanup)
+
+-- Start!
+initialize()
